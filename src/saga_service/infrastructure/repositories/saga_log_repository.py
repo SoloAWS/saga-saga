@@ -180,7 +180,7 @@ class SagaLogRepository:
             start_time=saga_log.start_time,
             end_time=saga_log.end_time,
             error_message=saga_log.error_message,
-            metadata=saga_log._metadata
+            metadata=saga_log.metadata
         )
         
         # Convertir pasos

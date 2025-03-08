@@ -1,0 +1,42 @@
+### Verificación de estado del servicio
+GET http://localhost:8085/health
+
+### Verificación de estado de la API
+GET http://localhost:8085/api/v1/saga/health
+
+### Obtener todas las sagas (paginadas)
+GET http://localhost:8085/api/v1/saga/sagas?limit=10&offset=0
+
+### Obtener sagas por estado
+GET http://localhost:8085/api/v1/saga/sagas?status=STARTED&limit=10&offset=0
+
+### Obtener sagas fallidas
+GET http://localhost:8085/api/v1/saga/sagas?status=FAILED&limit=10&offset=0
+
+### Obtener sagas en proceso de compensación
+GET http://localhost:8085/api/v1/saga/sagas?status=COMPENSATING&limit=10&offset=0
+
+### Obtener sagas compensadas con éxito
+GET http://localhost:8085/api/v1/saga/sagas?status=COMPENSATION_SUCCEEDED&limit=10&offset=0
+
+### Obtener sagas con compensación fallida
+GET http://localhost:8085/api/v1/saga/sagas?status=COMPENSATION_FAILED&limit=10&offset=0
+
+### Obtener saga por ID
+# @name getSagaById
+GET http://localhost:8085/api/v1/saga/sagas/550e8400-e29b-41d4-a716-446655440000
+
+### Obtener saga por ID de correlación
+GET http://localhost:8085/api/v1/saga/sagas/by-correlation/correlation-123456
+
+### Obtener sagas relacionadas con una tarea específica
+GET http://localhost:8085/api/v1/saga/sagas/by-task/550e8400-e29b-41d4-a716-446655440001?limit=5
+
+### Filtrar sagas por fechas
+GET http://localhost:8085/api/v1/saga/sagas?from_date=2025-03-01T00:00:00Z&to_date=2025-03-07T23:59:59Z&limit=10
+
+### Filtrar sagas por ID de imagen
+GET http://localhost:8085/api/v1/saga/sagas?image_id=550e8400-e29b-41d4-a716-446655440002&limit=10
+
+### Filtrar sagas por ID de tarea y estado
+GET http://localhost:8085/api/v1/saga/sagas?task_id=550e8400-e29b-41d4-a716-446655440003&status=FAILED&limit=10
