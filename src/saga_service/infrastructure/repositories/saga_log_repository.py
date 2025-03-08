@@ -37,7 +37,7 @@ class SagaLogRepository:
         saga_dto.start_time = saga_log.start_time
         saga_dto.end_time = saga_log.end_time
         saga_dto.error_message = saga_log.error_message
-        saga_dto.metadata = saga_log.metadata
+        saga_dto._metadata = saga_log._metadata
         
         # Gestionar pasos existentes y añadir nuevos
         existing_step_ids = {step.id for step in saga_dto.steps}
@@ -52,7 +52,7 @@ class SagaLogRepository:
                 step_dto.event_id = step.event_id
                 step_dto.event_type = step.event_type
                 step_dto.entity_id = step.entity_id
-                step_dto.metadata = step.metadata
+                step_dto._metadata = step._metadata
                 step_dto.error_message = step.error_message
                 step_dto.timestamp = step.timestamp
                 step_dto.compensation_timestamp = step.compensation_timestamp
@@ -67,7 +67,7 @@ class SagaLogRepository:
                     event_id=step.event_id,
                     event_type=step.event_type,
                     entity_id=step.entity_id,
-                    metadata=step.metadata,
+                    metadata=step._metadata,
                     error_message=step.error_message,
                     timestamp=step.timestamp,
                     compensation_timestamp=step.compensation_timestamp
@@ -134,7 +134,7 @@ class SagaLogRepository:
             event_id=step.event_id,
             event_type=step.event_type,
             entity_id=step.entity_id,
-            metadata=step.metadata,
+            metadata=step._metadata,
             error_message=step.error_message,
             timestamp=step.timestamp,
             compensation_timestamp=step.compensation_timestamp
@@ -160,7 +160,7 @@ class SagaLogRepository:
         step_dto.event_id = step.event_id
         step_dto.event_type = step.event_type
         step_dto.entity_id = step.entity_id
-        step_dto.metadata = step.metadata
+        step_dto._metadata = step._metadata
         step_dto.error_message = step.error_message
         step_dto.timestamp = step.timestamp
         step_dto.compensation_timestamp = step.compensation_timestamp
@@ -180,7 +180,7 @@ class SagaLogRepository:
             start_time=saga_log.start_time,
             end_time=saga_log.end_time,
             error_message=saga_log.error_message,
-            metadata=saga_log.metadata
+            metadata=saga_log._metadata
         )
         
         # Convertir pasos
@@ -194,7 +194,7 @@ class SagaLogRepository:
                 event_id=step.event_id,
                 event_type=step.event_type,
                 entity_id=step.entity_id,
-                metadata=step.metadata,
+                metadata=step._metadata,
                 error_message=step.error_message,
                 timestamp=step.timestamp,
                 compensation_timestamp=step.compensation_timestamp
@@ -214,7 +214,7 @@ class SagaLogRepository:
             start_time=saga_dto.start_time,
             end_time=saga_dto.end_time,
             error_message=saga_dto.error_message,
-            metadata=saga_dto.metadata or {}
+            metadata=saga_dto._metadata or {}
         )
         
         # Añadir los pasos
@@ -235,7 +235,7 @@ class SagaLogRepository:
             event_id=step_dto.event_id,
             event_type=step_dto.event_type,
             entity_id=step_dto.entity_id,
-            metadata=step_dto.metadata or {},
+            metadata=step_dto._metadata or {},
             error_message=step_dto.error_message,
             timestamp=step_dto.timestamp,
             compensation_timestamp=step_dto.compensation_timestamp

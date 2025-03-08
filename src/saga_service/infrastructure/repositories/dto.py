@@ -16,7 +16,7 @@ class SagaLogDTO(Base):
     start_time = Column(DateTime, default=datetime.now)
     end_time = Column(DateTime, nullable=True)
     error_message = Column(String, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    _metadata = Column(JSON, nullable=True)
     
     # Relación con los pasos
     steps = relationship("SagaStepDTO", back_populates="saga", cascade="all, delete-orphan")
@@ -33,7 +33,7 @@ class SagaStepDTO(Base):
     event_id = Column(String, nullable=True)
     event_type = Column(String, nullable=True)
     entity_id = Column(String, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    _metadata = Column(JSON, nullable=True)
     error_message = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.now)
     compensation_timestamp = Column(DateTime, nullable=True)
