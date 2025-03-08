@@ -295,7 +295,7 @@ class DataRetrievalListener:
                     return saga
                 
                 # También buscar en los metadatos
-                if step._metadata and step._metadata.get("task_id") == task_id:
+                if step.metadata and step.metadata.get("task_id") == task_id:
                     return saga
         
         return None

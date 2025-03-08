@@ -46,10 +46,25 @@ class Settings(BaseSettings):
         "anonymization_failed": "persistent://public/default/anonymization-failed",
         "image_ready_for_processing": "persistent://public/default/image-processing",
         
-        # Processing topics
+        # Processing topics - Legacy
         "processing_started": "persistent://public/default/processing.*.started",
         "processing_completed": "persistent://public/default/processing.*.completed",
         "processing_failed": "persistent://public/default/processing.*.failed",
+        
+        # Processing topics - New Node.js implementation
+        "node_processing_started": "persistent://public/default/processing-started",
+        "node_processing_completed": "persistent://public/default/image-processed",
+        "node_processing_failed": "persistent://public/default/processing-failed",
+        
+        # USA Processing Topics
+        "usa_processing_started": "persistent://public/default/usa-processing-started",
+        "usa_processing_completed": "persistent://public/default/usa-processing-completed",
+        "usa_processing_failed": "persistent://public/default/usa-processing-failed",
+        
+        # LATAM Processing Topics
+        "latam_processing_started": "persistent://public/default/latam-processing-started",
+        "latam_processing_completed": "persistent://public/default/latam-processing-completed",
+        "latam_processing_failed": "persistent://public/default/latam-processing-failed",
     })
     
     # Comandos para compensación

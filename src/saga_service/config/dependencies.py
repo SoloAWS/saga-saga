@@ -6,7 +6,6 @@ from .database import get_db, create_session
 from .settings import get_settings
 from ..infrastructure.messaging.pulsar_publisher import PulsarPublisher
 from ..infrastructure.messaging.pulsar_consumer import PulsarConsumer
-from ..core.saga_coordinator import SagaCoordinator
 from ..services.compensation_service import CompensationService
 from ..services.data_retrieval_listener import DataRetrievalListener
 from ..services.anonymization_listener import AnonymizationListener
@@ -65,7 +64,7 @@ def get_publisher() -> Optional[PulsarPublisher]:
     """
     return _publisher_instance
 
-def get_coordinator() -> SagaCoordinator:
+def get_coordinator() -> Any:
     """
     Obtiene la instancia del coordinador de Saga.
     
@@ -75,6 +74,8 @@ def get_coordinator() -> SagaCoordinator:
     global _coordinator_instance
     
     if _coordinator_instance is None:
+        # Importación tardía para evitar referencias circulares
+        from ..core.saga_coordinator import SagaCoordinator
         _coordinator_instance = SagaCoordinator()
         logger.info("SagaCoordinator instance created")
     
@@ -224,13 +225,45 @@ async def initialize_consumer() -> Optional[PulsarConsumer]:
                 "processing.*.started": processing_listener.handle_processing_started,
                 "processing.*.completed": processing_listener.handle_processing_completed,
                 "processing.*.failed": processing_listener.handle_processing_failed,
+                
+                # Additional topics from the new processing-service-node
+                "image-processed": processing_listener.handle_processing_completed,
+                "processing-failed": processing_listener.handle_processing_failed,
+                "processing-started": processing_listener.handle_processing_started,
+                "usa-processing-started": processing_listener.handle_processing_started,
+                "usa-processing-completed": processing_listener.handle_processing_completed,
+                "usa-processing-failed": processing_listener.handle_processing_failed,
+                "latam-processing-started": processing_listener.handle_processing_started,
+                "latam-processing-completed": processing_listener.handle_processing_completed,
+                "latam-processing-failed": processing_listener.handle_processing_failed,
             }
+            
+            # Add all the required topics to listen to
+            all_topics = list(settings.topics_to_listen.values())
+            
+            # Add additional topics that might exist in the processing-service-node
+            extra_topics = [
+                "persistent://public/default/image-processed",
+                "persistent://public/default/processing-failed",
+                "persistent://public/default/processing-started",
+                "persistent://public/default/usa-processing-started",
+                "persistent://public/default/usa-processing-completed",
+                "persistent://public/default/usa-processing-failed",
+                "persistent://public/default/latam-processing-started",
+                "persistent://public/default/latam-processing-completed",
+                "persistent://public/default/latam-processing-failed",
+            ]
+            
+            # Combine all topics
+            for topic in extra_topics:
+                if topic not in all_topics:
+                    all_topics.append(topic)
             
             # Inicializar consumidor
             _consumer_instance = PulsarConsumer(
                 service_url=settings.pulsar_service_url,
                 subscription_name="saga-service",
-                topics=list(settings.topics_to_listen.values()),
+                topics=all_topics,
                 event_handlers=event_handlers,
                 token=settings.pulsar_token
             )

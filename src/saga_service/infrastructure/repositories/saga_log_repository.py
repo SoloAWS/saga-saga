@@ -20,8 +20,25 @@ class SagaLogRepository:
         await self.session.flush()  # Para obtener el ID generado
         await self.session.commit()
         
-        # Recuperar la entidad completa
-        return await self.get_by_id(saga_log.id)
+        # Recuperamos la entidad para asegurarnos de tener todos los datos actualizados
+        # pero evitando cargar relaciones que podrían causar problemas async
+        dto = await self.session.get(SagaLogDTO, saga_log.id)
+        if not dto:
+            raise ValueError(f"No se pudo crear el SagaLog con ID {saga_log.id}")
+
+        # Crear una nueva instancia con los datos básicos sin cargar relaciones
+        created_saga = SagaLog(
+            id=dto.id,
+            correlation_id=dto.correlation_id,
+            saga_type=dto.saga_type,
+            status=SagaStatus(dto.status),
+            start_time=dto.start_time,
+            end_time=dto.end_time,
+            error_message=dto.error_message,
+            metadata=dto._metadata or {}
+        )
+        
+        return created_saga
     
     async def update(self, saga_log: SagaLog) -> SagaLog:
         """Actualiza un registro de saga existente"""
@@ -37,25 +54,34 @@ class SagaLogRepository:
         saga_dto.start_time = saga_log.start_time
         saga_dto.end_time = saga_log.end_time
         saga_dto.error_message = saga_log.error_message
-        saga_dto._metadata = saga_log._metadata
+        saga_dto._metadata = saga_log.metadata
         
         # Gestionar pasos existentes y añadir nuevos
-        existing_step_ids = {step.id for step in saga_dto.steps}
+        existing_step_ids = set()
+        
+        # Primero cargamos explícitamente los pasos para evitar accesos lazy loading
+        stmt = select(SagaStepDTO).where(SagaStepDTO.saga_id == saga_log.id)
+        result = await self.session.execute(stmt)
+        existing_steps = result.scalars().all()
+        
+        for step_dto in existing_steps:
+            existing_step_ids.add(step_dto.id)
         
         for step in saga_log.steps:
             if step.id in existing_step_ids:
                 # Actualizar paso existente
                 step_dto = await self.session.get(SagaStepDTO, step.id)
-                step_dto.step_type = step.step_type.value
-                step_dto.service = step.service.value
-                step_dto.status = step.status.value
-                step_dto.event_id = step.event_id
-                step_dto.event_type = step.event_type
-                step_dto.entity_id = step.entity_id
-                step_dto._metadata = step._metadata
-                step_dto.error_message = step.error_message
-                step_dto.timestamp = step.timestamp
-                step_dto.compensation_timestamp = step.compensation_timestamp
+                if step_dto:  # Protección extra
+                    step_dto.step_type = step.step_type.value
+                    step_dto.service = step.service.value
+                    step_dto.status = step.status.value
+                    step_dto.event_id = step.event_id
+                    step_dto.event_type = step.event_type
+                    step_dto.entity_id = step.entity_id
+                    step_dto._metadata = step.metadata
+                    step_dto.error_message = step.error_message
+                    step_dto.timestamp = step.timestamp
+                    step_dto.compensation_timestamp = step.compensation_timestamp
             else:
                 # Añadir nuevo paso
                 step_dto = SagaStepDTO(
@@ -67,7 +93,7 @@ class SagaLogRepository:
                     event_id=step.event_id,
                     event_type=step.event_type,
                     entity_id=step.entity_id,
-                    metadata=step._metadata,
+                    metadata=step.metadata,
                     error_message=step.error_message,
                     timestamp=step.timestamp,
                     compensation_timestamp=step.compensation_timestamp
@@ -86,7 +112,29 @@ class SagaLogRepository:
         if not saga_dto:
             return None
         
-        return self._to_entity(saga_dto)
+        # Cargar los pasos explícitamente para evitar lazy loading
+        stmt = select(SagaStepDTO).where(SagaStepDTO.saga_id == saga_id)
+        result = await self.session.execute(stmt)
+        step_dtos = result.scalars().all()
+        
+        # Crear la saga
+        saga = SagaLog(
+            id=saga_dto.id,
+            correlation_id=saga_dto.correlation_id,
+            saga_type=saga_dto.saga_type,
+            status=SagaStatus(saga_dto.status),
+            start_time=saga_dto.start_time,
+            end_time=saga_dto.end_time,
+            error_message=saga_dto.error_message,
+            metadata=saga_dto._metadata or {}
+        )
+        
+        # Añadir los pasos
+        for step_dto in step_dtos:
+            step = self._step_to_entity(step_dto)
+            saga.steps.append(step)
+        
+        return saga
     
     async def get_by_correlation_id(self, correlation_id: str) -> Optional[SagaLog]:
         """Obtiene un registro de saga por su ID de correlación"""
@@ -97,7 +145,7 @@ class SagaLogRepository:
         if not saga_dto:
             return None
         
-        return self._to_entity(saga_dto)
+        return await self.get_by_id(saga_dto.id)
     
     async def get_all(self, limit: int = 100, offset: int = 0) -> List[SagaLog]:
         """Obtiene todos los registros de saga paginados"""
@@ -105,7 +153,13 @@ class SagaLogRepository:
         result = await self.session.execute(stmt)
         saga_dtos = result.scalars().all()
         
-        return [self._to_entity(dto) for dto in saga_dtos]
+        sagas = []
+        for dto in saga_dtos:
+            saga = await self.get_by_id(dto.id)
+            if saga:  # Protección extra
+                sagas.append(saga)
+        
+        return sagas
     
     async def get_by_status(self, status: SagaStatus, limit: int = 100) -> List[SagaLog]:
         """Obtiene registros de saga por estado"""
@@ -113,7 +167,13 @@ class SagaLogRepository:
         result = await self.session.execute(stmt)
         saga_dtos = result.scalars().all()
         
-        return [self._to_entity(dto) for dto in saga_dtos]
+        sagas = []
+        for dto in saga_dtos:
+            saga = await self.get_by_id(dto.id)
+            if saga:  # Protección extra
+                sagas.append(saga)
+        
+        return sagas
     
     async def add_step(self, saga_id: uuid.UUID, step: SagaStep) -> SagaStep:
         """Añade un paso a un registro de saga existente"""
@@ -134,7 +194,7 @@ class SagaLogRepository:
             event_id=step.event_id,
             event_type=step.event_type,
             entity_id=step.entity_id,
-            metadata=step._metadata,
+            metadata=step.metadata,
             error_message=step.error_message,
             timestamp=step.timestamp,
             compensation_timestamp=step.compensation_timestamp
@@ -160,7 +220,7 @@ class SagaLogRepository:
         step_dto.event_id = step.event_id
         step_dto.event_type = step.event_type
         step_dto.entity_id = step.entity_id
-        step_dto._metadata = step._metadata
+        step_dto._metadata = step.metadata
         step_dto.error_message = step.error_message
         step_dto.timestamp = step.timestamp
         step_dto.compensation_timestamp = step.compensation_timestamp
@@ -194,7 +254,7 @@ class SagaLogRepository:
                 event_id=step.event_id,
                 event_type=step.event_type,
                 entity_id=step.entity_id,
-                metadata=step._metadata,
+                metadata=step.metadata,
                 error_message=step.error_message,
                 timestamp=step.timestamp,
                 compensation_timestamp=step.compensation_timestamp
@@ -216,11 +276,6 @@ class SagaLogRepository:
             error_message=saga_dto.error_message,
             metadata=saga_dto._metadata or {}
         )
-        
-        # Añadir los pasos
-        for step_dto in saga_dto.steps:
-            step = self._step_to_entity(step_dto)
-            saga.steps.append(step)
         
         return saga
     

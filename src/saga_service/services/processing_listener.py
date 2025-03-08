@@ -181,7 +181,7 @@ class ProcessingListener:
                     return saga
                 
                 # También buscar en los metadatos
-                if step._metadata and step._metadata.get("task_id") == task_id:
+                if step.metadata and step.metadata.get("task_id") == task_id:
                     return saga
         
         return None
@@ -206,10 +206,10 @@ class ProcessingListener:
         for saga in all_sagas:
             for step in saga.steps:
                 # Verificar si los metadatos coinciden parcialmente
-                if step._metadata:
+                if step.metadata:
                     matches = []
                     for key, value in metadata.items():
-                        if key in step._metadata and step._metadata[key] == value:
+                        if key in step.metadata and step.metadata[key] == value:
                             matches.append(True)
                     
                     # Si todos los metadatos coinciden

@@ -33,7 +33,7 @@ class SagaStep:
             "event_id": self.event_id,
             "event_type": self.event_type,
             "entity_id": self.entity_id,
-            "metadata": self._metadata,
+            "metadata": self.metadata,
             "error_message": self.error_message,
             "timestamp": self.timestamp.isoformat(),
             "compensation_timestamp": self.compensation_timestamp.isoformat() if self.compensation_timestamp else None
@@ -94,6 +94,6 @@ class SagaLog:
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "error_message": self.error_message,
-            "metadata": self._metadata,
+            "metadata": self.metadata,
             "steps": [step.to_dict() for step in self.steps]
         }

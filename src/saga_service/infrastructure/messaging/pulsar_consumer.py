@@ -187,11 +187,8 @@ class PulsarConsumer:
                     self._timeout_counter = 0
                     
                     # Procesar mensaje en tarea separada
-                    try:
-                        await self._process_message(consumer, msg, topic)
-                    except Exception as e:
-                        logger.error(f"Error processing message: {str(e)}")
-                        consumer.negative_acknowledge(msg)
+                    # Usando run_in_executor para no bloquear el loop principal
+                    asyncio.create_task(self._process_message(consumer, msg))
                     
                 except asyncio.TimeoutError:
                     # Timeout normal, solo incrementar contador
@@ -218,14 +215,13 @@ class PulsarConsumer:
         
         logger.info(f"Stopped consuming messages from topic: {topic}")
 
-    async def _process_message(self, consumer, msg, topic):
+    async def _process_message(self, consumer, msg):
         """
         Procesa un mensaje recibido de Pulsar.
         
         Args:
             consumer: Consumidor que recibió el mensaje
             msg: Mensaje de Pulsar
-            topic: Tópico del que se recibió el mensaje
         """
         try:
             # Decodificar el mensaje
@@ -236,27 +232,44 @@ class PulsarConsumer:
             event_type = data.get('type')
             
             if not event_type:
-                logger.warning(f"Received message without type from topic {topic}")
+                logger.warning(f"Received message without type from topic {consumer.topic()}")
                 consumer.acknowledge(msg)
                 return
             
-            logger.info(f"Received event {event_type} from topic {topic}")
+            logger.info(f"Received event {event_type} from topic {consumer.topic()}")
             
             # Buscar un manejador para este tipo de evento
             if event_type in self.event_handlers:
                 handler = self.event_handlers[event_type]
-                await handler(data)
-                logger.info(f"Event {event_type} processed successfully")
+                
+                # Ejecutar el handler dentro de un contexto que maneje correctamente
+                # la transacción de base de datos
+                try:
+                    await handler(data)
+                    logger.info(f"Event {event_type} processed successfully")
+                except Exception as handler_error:
+                    logger.error(f"Error in handler for event {event_type}: {str(handler_error)}")
+                    logger.error(traceback.format_exc())
+                    # Negative acknowledgment para que se reintente
+                    consumer.negative_acknowledge(msg)
+                    return
             else:
                 # Si no hay un manejador específico, buscar un manejador genérico por prefijo
                 # Esto es útil para eventos como "processing.*.failed"
                 handled = False
                 for handler_key, handler in self.event_handlers.items():
                     if handler_key.endswith('*') and event_type.startswith(handler_key[:-1]):
-                        await handler(data)
-                        logger.info(f"Event {event_type} processed by wildcard handler {handler_key}")
-                        handled = True
-                        break
+                        try:
+                            await handler(data)
+                            logger.info(f"Event {event_type} processed by wildcard handler {handler_key}")
+                            handled = True
+                            break
+                        except Exception as handler_error:
+                            logger.error(f"Error in wildcard handler {handler_key} for event {event_type}: {str(handler_error)}")
+                            logger.error(traceback.format_exc())
+                            # Negative acknowledgment para que se reintente
+                            consumer.negative_acknowledge(msg)
+                            return
                 
                 if not handled:
                     logger.warning(f"No handler found for event type: {event_type}")

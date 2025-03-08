@@ -99,7 +99,7 @@ class CompensationService:
                     return saga
                 
                 # También buscar en los metadatos
-                if step._metadata and step._metadata.get("task_id") == task_id:
+                if step.metadata and step.metadata.get("task_id") == task_id:
                     return saga
         
         return None
@@ -189,7 +189,7 @@ class CompensationService:
                 
                 # Si es un paso de carga de imagen, necesitamos eliminar esa imagen
                 if step.step_type == StepType.DATA_RETRIEVAL_UPLOAD:
-                    image_id = step._metadata.get("image_id")
+                    image_id = step.metadata.get("image_id")
                     if image_id:
                         # Preparar comando de compensación
                         command_data = {

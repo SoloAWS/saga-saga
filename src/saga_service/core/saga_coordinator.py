@@ -2,6 +2,7 @@ import logging
 import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import asyncio
 
 from ..domain.entities import SagaLog, SagaStep
 from ..domain.enums import SagaStatus, StepStatus, ServiceType, StepType
@@ -41,10 +42,11 @@ class SagaCoordinator:
             start_time=datetime.now()
         )
         
-        # Persistir en la base de datos
+        # Persistir en la base de datos utilizando async with para asegurar el contexto async correcto
         async with get_db() as session:
             repository = SagaLogRepository(session)
-            return await repository.create(saga)
+            created_saga = await repository.create(saga)
+            return created_saga
     
     async def add_step(self, saga_id: uuid.UUID, step_data: Dict[str, Any]) -> SagaStep:
         """
@@ -71,7 +73,7 @@ class SagaCoordinator:
             timestamp=datetime.now()
         )
         
-        # Persistir en la base de datos
+        # Persistir en la base de datos utilizando async with
         async with get_db() as session:
             repository = SagaLogRepository(session)
             return await repository.add_step(saga_id, step)
@@ -91,7 +93,7 @@ class SagaCoordinator:
         async with get_db() as session:
             repository = SagaLogRepository(session)
             
-            # Obtener el saga log que contiene el paso
+            # Obtener el saga step usando el step_id
             from sqlalchemy import select
             from ..infrastructure.repositories.dto import SagaStepDTO
             
