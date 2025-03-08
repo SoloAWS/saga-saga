@@ -3,8 +3,9 @@ import logging
 import asyncio
 import pulsar
 import traceback
+import re
 from typing import Dict, Any, List, Callable, Awaitable, Optional
-from concurrent.futures import ThreadPoolExecutor  # Importación corregida
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -72,42 +73,131 @@ class PulsarConsumer:
                 authentication=auth
             )
             
-            # Crear executor de threads (corregido)
+            # Crear executor de threads
             self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
             
             # Marcar como en ejecución
             self._is_running = True
             
-            # Para cada tópico, crear un consumidor y una tarea de consumo
-            for topic in self.topics:
-                # Crear un ID único para la suscripción a cada tópico
-                # Esto permite tener múltiples consumidores para el mismo tópico
-                subscription = f"{self.subscription_name}-{topic.split('/')[-1]}"
-                
-                # Crear consumidor
-                try:
-                    consumer = self.client.subscribe(
-                        topic=topic,
-                        subscription_name=subscription,
-                        consumer_type=pulsar.ConsumerType.Shared,
-                        **self.consumer_config
-                    )
-                    
-                    self.consumers[topic] = consumer
-                    logger.info(f"Subscribed to topic: {topic}")
-                    
-                    # Iniciar tarea de consumo
-                    task = asyncio.create_task(self._consume_messages(consumer, topic))
-                    self._consumer_tasks.append(task)
-                    
-                except Exception as e:
-                    logger.error(f"Error subscribing to topic {topic}: {str(e)}")
+            # Agrupar tópicos por servicio para reducir el número de consumidores
+            topic_groups = self._group_topics_by_service()
             
-            logger.info("Pulsar consumer started")
+            # Para cada grupo de servicio, crear un consumidor con patrón si es posible
+            for service_name, topics_in_group in topic_groups.items():
+                # Verificar si podemos usar un patrón para este grupo
+                pattern = self._create_pattern_for_topics(topics_in_group)
+                
+                if pattern and len(topics_in_group) > 2:  # Solo usar patrón si hay múltiples tópicos similares
+                    # Usar suscripción basada en patrón
+                    try:
+                        subscription = f"{self.subscription_name}-{service_name}"
+                        consumer = self.client.subscribe(
+                            topic_pattern=pattern,
+                            subscription_name=subscription,
+                            consumer_type=pulsar.ConsumerType.Shared,
+                            **self.consumer_config
+                        )
+                        
+                        self.consumers[service_name] = consumer
+                        logger.info(f"Subscribed to topic pattern: {pattern} for service {service_name}")
+                        
+                        # Iniciar tarea de consumo
+                        task = asyncio.create_task(self._consume_messages(consumer, f"{service_name}-pattern"))
+                        self._consumer_tasks.append(task)
+                        
+                    except Exception as e:
+                        logger.error(f"Error subscribing to pattern {pattern} for {service_name}: {str(e)}")
+                        # Fallar a suscripciones individuales
+                        for topic in topics_in_group:
+                            await self._subscribe_to_individual_topic(topic, service_name)
+                else:
+                    # Usar suscripciones individuales con nombre de suscripción compartido
+                    for topic in topics_in_group:
+                        await self._subscribe_to_individual_topic(topic, service_name)
+            
+            logger.info(f"Pulsar consumer started with {len(self.consumers)} consumers instead of {len(self.topics)} topics")
         except Exception as e:
             logger.error(f"Error starting Pulsar consumer: {str(e)}")
-            await self.close()  # Usar método close en lugar de cerrar directamente
+            await self.close()
             raise
+
+    async def _subscribe_to_individual_topic(self, topic, service_name):
+        """Suscribe a un tópico individual con nombre de suscripción por servicio"""
+        try:
+            # Usar el mismo nombre de suscripción para todos los tópicos del mismo servicio
+            subscription = f"{self.subscription_name}-{service_name}"
+            
+            consumer = self.client.subscribe(
+                topic=topic,
+                subscription_name=subscription,
+                consumer_type=pulsar.ConsumerType.Shared,
+                **self.consumer_config
+            )
+            
+            self.consumers[topic] = consumer
+            logger.info(f"Subscribed to topic: {topic} (subscription: {subscription})")
+            
+            # Iniciar tarea de consumo
+            task = asyncio.create_task(self._consume_messages(consumer, topic))
+            self._consumer_tasks.append(task)
+            
+        except Exception as e:
+            logger.error(f"Error subscribing to topic {topic}: {str(e)}")
+
+    def _group_topics_by_service(self):
+        """Agrupa tópicos por servicio para optimizar las suscripciones"""
+        groups = {
+            "data-retrieval": [],
+            "anonymization": [],
+            "processing": [],
+            "misc": []
+        }
+        
+        for topic in self.topics:
+            topic_name = topic.split('/')[-1]
+            
+            if "retrieval" in topic_name:
+                groups["data-retrieval"].append(topic)
+            elif "anonymization" in topic_name:
+                groups["anonymization"].append(topic)
+            elif "processing" in topic_name or "processed" in topic_name:
+                groups["processing"].append(topic)
+            else:
+                groups["misc"].append(topic)
+        
+        # Eliminar grupos vacíos
+        return {k: v for k, v in groups.items() if v}
+
+    def _create_pattern_for_topics(self, topics):
+        """Crea un patrón regex para un grupo de tópicos si es posible"""
+        if not topics or len(topics) < 2:
+            return None
+            
+        # Extraer los nombres de tópico sin el prefijo común
+        topic_names = [t.split('/')[-1] for t in topics]
+        
+        # Buscar prefijo común
+        prefix = self._find_common_prefix(topic_names)
+        if prefix and len(prefix) >= 3:  # Prefijo significativo
+            # Crear un patrón basado en el prefijo común
+            namespace_prefix = topics[0].rsplit('/', 1)[0]
+            return f"{namespace_prefix}/{prefix}.*"
+            
+        return None
+
+    def _find_common_prefix(self, strings):
+        """Encuentra el prefijo común más largo en una lista de strings"""
+        if not strings:
+            return ""
+        
+        prefix = strings[0]
+        for s in strings[1:]:
+            while not s.startswith(prefix) and prefix:
+                prefix = prefix[:-1]
+            if not prefix:
+                break
+                
+        return prefix
 
     async def stop(self):
         """Detiene el consumidor de Pulsar"""
@@ -159,16 +249,16 @@ class PulsarConsumer:
             except Exception as e:
                 logger.warning(f"Error closing Pulsar client: {str(e)}")
 
-    async def _consume_messages(self, consumer, topic):
+    async def _consume_messages(self, consumer, topic_identifier):
         """
-        Tarea principal para consumir mensajes de un tópico específico.
+        Tarea principal para consumir mensajes de un tópico o patrón específico.
         Se ejecuta continuamente hasta que se detiene el consumidor.
         
         Args:
             consumer: Consumidor de Pulsar
-            topic: Tópico al que está suscrito el consumidor
+            topic_identifier: Identificador del tópico o patrón
         """
-        logger.info(f"Started consuming messages from topic: {topic}")
+        logger.info(f"Started consuming messages from: {topic_identifier}")
         
         while self._is_running:
             try:
@@ -187,7 +277,6 @@ class PulsarConsumer:
                     self._timeout_counter = 0
                     
                     # Procesar mensaje en tarea separada
-                    # Usando run_in_executor para no bloquear el loop principal
                     asyncio.create_task(self._process_message(consumer, msg))
                     
                 except asyncio.TimeoutError:
@@ -196,7 +285,7 @@ class PulsarConsumer:
                     
                     # Registrar solo periódicamente para evitar inundar el log
                     if self._timeout_counter % self._log_interval == 0:
-                        logger.debug(f"No new messages in {self._timeout_counter} polls from topic {topic}")
+                        logger.debug(f"No new messages in {self._timeout_counter} polls from {topic_identifier}")
                     
                     # Verificar si debemos seguir ejecutando
                     continue
@@ -207,13 +296,13 @@ class PulsarConsumer:
                 
             except asyncio.CancelledError:
                 # La tarea fue cancelada, salir del bucle
-                logger.info(f"Consumer task for topic {topic} cancelled")
+                logger.info(f"Consumer task for {topic_identifier} cancelled")
                 break
             except Exception as e:
-                logger.error(f"Unexpected error in consumer loop for topic {topic}: {str(e)}")
+                logger.error(f"Unexpected error in consumer loop for {topic_identifier}: {str(e)}")
                 await asyncio.sleep(1.0)  # Pausa para evitar CPU 100%
         
-        logger.info(f"Stopped consuming messages from topic: {topic}")
+        logger.info(f"Stopped consuming messages from: {topic_identifier}")
 
     async def _process_message(self, consumer, msg):
         """
