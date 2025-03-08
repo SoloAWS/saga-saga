@@ -95,6 +95,11 @@ async def shutdown_event():
 def root():
     return {"message": "Bienvenido al Servicio de Saga"}
 
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 # Ejecutar la aplicación si se llama directamente
 if __name__ == "__main__":
     import uvicorn
